@@ -82,8 +82,11 @@ __dead2 void bl1_plat_fwu_done(void *client_cookie, void *reserved)
  ******************************************************************************/
 bool plat_arm_bl1_fwu_needed(void)
 {
-	int32_t nv_flags = (int32_t)mmio_read_32(V2M_SYS_NVFLAGS_ADDR);
+	// int32_t nv_flags = (int32_t)mmio_read_32(V2M_SYS_NVFLAGS_ADDR);
 
-	/* if image load/authentication failed */
-	return ((nv_flags == -EAUTH) || (nv_flags == -ENOENT));
+	// /* if image load/authentication failed */
+	// return ((nv_flags == -EAUTH) || (nv_flags == -ENOENT));
+	
+	//我们没有VE System Registers，也暂时不需要bl1u，所以直接返回false
+	return false;
 }
