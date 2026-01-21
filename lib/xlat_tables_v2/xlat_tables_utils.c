@@ -163,9 +163,16 @@ static void xlat_tables_print_internal(xlat_ctx_t *ctx, uintptr_t table_base_va,
 		if ((desc & DESC_MASK) == INVALID_DESC) {
 
 			if (invalid_row_count == 0) {
+#if XLAT_TABLES_PRINT_ENTRY_ADDR
+				printf("%sVA:0x%lx size:0x%zx desc_addr:%p desc:0x%" PRIx64 "\n",
+				       level_spacers[level],
+				       table_idx_va, level_size,
+				       (void *)&table_base[table_idx], desc);
+#else
 				printf("%sVA:0x%lx size:0x%zx\n",
 				       level_spacers[level],
 				       table_idx_va, level_size);
+#endif
 			}
 			invalid_row_count++;
 
@@ -191,20 +198,34 @@ static void xlat_tables_print_internal(xlat_ctx_t *ctx, uintptr_t table_base_va,
 				 * but instead points to the next translation
 				 * table in the translation table walk.
 				 */
+				uintptr_t addr_inner = desc & TABLE_ADDR_MASK;
+#if XLAT_TABLES_PRINT_ENTRY_ADDR
+				printf("%sVA:0x%lx size:0x%zx desc_addr:%p desc:0x%" PRIx64 " NEXT_TBL:0x%lx\n",
+				       level_spacers[level],
+				       table_idx_va, level_size,
+				       (void *)&table_base[table_idx], desc, addr_inner);
+#else
 				printf("%sVA:0x%lx size:0x%zx\n",
 				       level_spacers[level],
 				       table_idx_va, level_size);
-
-				uintptr_t addr_inner = desc & TABLE_ADDR_MASK;
+#endif
 
 				xlat_tables_print_internal(ctx, table_idx_va,
 					(uint64_t *)addr_inner,
 					XLAT_TABLE_ENTRIES, level + 1U);
 			} else {
+#if XLAT_TABLES_PRINT_ENTRY_ADDR
+				printf("%sVA:0x%lx PA:0x%" PRIx64 " size:0x%zx desc_addr:%p desc:0x%" PRIx64 " ",
+				       level_spacers[level], table_idx_va,
+				       (uint64_t)(desc & TABLE_ADDR_MASK),
+				       level_size,
+				       (void *)&table_base[table_idx], desc);
+#else
 				printf("%sVA:0x%lx PA:0x%" PRIx64 " size:0x%zx ",
 				       level_spacers[level], table_idx_va,
 				       (uint64_t)(desc & TABLE_ADDR_MASK),
 				       level_size);
+#endif
 				xlat_desc_print(ctx, desc);
 				printf("\n");
 			}
