@@ -1,0 +1,24 @@
+{
+    "files.associations": {
+        "*.md": "markdown",
+        "*.py": "python",
+        "pl011.h": "c",
+        "plat_arm.h": "c",
+        "console.h": "c",
+        "bl_common.h": "c",
+        "bl1.h": "c",
+        "cx_uart.h": "c",
+        "cx_platform_def.h": "c",
+        "cstdlib": "c",
+        "cstdint": "c",
+        "platform_def.h": "c",
+        "cx_console.h": "c",
+        "console_assertions.h": "c",
+        "random": "c",
+        "debug.h": "c",
+        "functional": "c",
+        "build_message.h": "c",
+        "assert.h": "c",
+        "stdio.h": "c"
+    }
+}

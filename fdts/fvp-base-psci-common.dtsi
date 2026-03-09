@@ -1,0 +1,313 @@
+// SPDX-License-Identifier: GPL-2.0 or BSD-3-Clause
+/*
+ * ARM Ltd. Fast Models
+ *
+ * Architecture Envelope Model (AEM) ARMv8-A
+ * ARMAEMv8AMPCT
+ *
+ * RTSM_VE_AEMv8A.lisa
+ *
+ * Copyright (c) 2017-2025, ARM Limited and Contributors. All rights reserved.
+ */
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <services/sdei_flags.h>
+
+#define LEVEL	0
+#define EDGE	2
+#define SDEI_NORMAL	0x70
+#define HIGHEST_SEC	0
+
+#include "rtsm_ve-motherboard.dtsi"
+
+/ {
+	model = "FVP Base";
+	compatible = "arm,fvp-base", "arm,vexpress";//定义硬件兼容性，内核可通过该属性匹配对应的设备驱动。这里表示兼容 ARM 的 FVP Base 和 Versatile Express 平台
+	interrupt-parent = <&gic>;//指定默认中断父节点为gic（通用中断控制器），即未显式指定中断父节点的设备默认使用 GIC。
+	#address-cells = <2>;//地址需要用两个32位的整数来表示，适用于 64 位系统，前 32 位为高地址，后 32 位为低地址
+	#size-cells = <2>;//大小也一样，需要用两个32位的整数描述
+	
+	/* chosen节点 */
+	chosen {  	//不对应实际硬件，用于传递启动参数（如内核命令行、标准输出设备）
+		stdout-path = "serial0:115200n8"; //指定标准输出设备为serial0（串口 0），波特率 115200，无校验位，8 位数据位。
+/* SPM_MM doesn't like this */
+#if SPM_MM == 0 //当SPM_MM（安全分区管理内存模型）未启用（SPM_MM == 0）时
+		bootargs = "console=ttyAMA0 earlycon=pl011,0x1c090000 root=/dev/vda ip=on"; //console=ttyAMA0：指定控制台为ttyAMA0（PL011 串口设备）；
+																					//earlycon=pl011,0x1c090000：早期控制台使用 PL011 串口，地址 0x1c090000；
+																					//root=/dev/vda：根文件系统在虚拟磁盘vda;
+																					//ip=on：启用网络配置。
+#endif
+	};
+
+	/* 别名节点 */
+	aliases { //为设备定义别名，简化设备引用（如用serial0代替&v2m_serial0）。这里将 4 个串口分别映射为serial0到serial3。
+		serial0 = &v2m_serial0;
+		serial1 = &v2m_serial1;
+		serial2 = &v2m_serial2;
+		serial3 = &v2m_serial3;
+	};
+
+	/* PSCI节点 */
+	psci {
+		compatible = "arm,psci-1.0", "arm,psci-0.2"; //描述 PSCI（Power State Coordination Interface，电源状态协调接口），用于 CPU 电源管理（如休眠、唤醒）。兼容 PSCI 1.0 和 0.2 版本。
+		method = "smc"; //指定 PSCI 命令通过 SMC（Secure Monitor Call，安全监控调用）触发。
+		max-pwr-lvl = <2>; //支持的最高电源管理级别为 2（0=CPU、1 = 集群、2 = 系统级）。
+	};
+
+#if SDEI_IN_FCONF || SEC_INT_DESC_IN_FCONF //当启用 SDEI 配置（SDEI_IN_FCONF）或安全中断描述（SEC_INT_DESC_IN_FCONF）时，定义firmware节点（固件相关配置）。仅在SDEI_SUPPORT启用时，SDEI_IN_FCONF才会启用。
+//SDEI（Software Delegated Exception Interface）是 ARM 定义的一种异常和事件处理机制，主要用于异常通知（如 RAS 异常），SDEI 允许 EL3 的固件向操作系统安全地报告和中断当前执行，比如报告硬件错误、系统异常等。
+	
+	/* 固件配置节点 */
+	firmware {
+#if SDEI_IN_FCONF
+		sdei {
+			compatible = "arm,sdei-1.0";//配置 SDEI 1.0，用于安全世界与非安全世界的异常委派。
+			method = "smc"; //SDEI命令通过SMC触发 
+			private_event_count = <3>; //定义 3 个私有事件（每个 CPU 独立）
+			shared_event_count = <3>; //定义3 个共享事件（多 CPU 共享）。
+			/*
+			 * Each event descriptor has typically 3 fields:
+			 * 1. Event number
+			 * 2. Interrupt number the event is bound to or
+			 *    if event is dynamic, specified as SDEI_DYN_IRQ
+			 * 3. Bit map of event flags
+			 */
+			 //事件编号，绑定到动态中断（SDEI_DYN_IRQ），事件标志为动态映射（SDEI_MAPF_DYNAMIC）
+			 //私有事件
+			private_events =	<1000 SDEI_DYN_IRQ SDEI_MAPF_DYNAMIC>,
+						<1001 SDEI_DYN_IRQ SDEI_MAPF_DYNAMIC>,
+						<1002 SDEI_DYN_IRQ SDEI_MAPF_DYNAMIC>;
+			//共享事件
+			shared_events =		<2000 SDEI_DYN_IRQ SDEI_MAPF_DYNAMIC>,
+						<2001 SDEI_DYN_IRQ SDEI_MAPF_DYNAMIC>,
+						<2002 SDEI_DYN_IRQ SDEI_MAPF_DYNAMIC>;
+		};
+#endif /* SDEI_IN_FCONF */
+
+#if SEC_INT_DESC_IN_FCONF
+		sec_interrupts {
+			compatible = "arm,secure_interrupt_desc"; //指定了兼容的驱动程序为 "arm,secure_interrupt_desc"，表明这是 ARM 架构下的安全中断描述。
+			/* Number of G0 and G1 secure interrupts defined by the platform */
+			g0_intr_cnt = <2>; //2个中断
+			g1s_intr_cnt = <9>; //9个中断
+			/*
+			 * Define a list of Group 1 Secure and Group 0 interrupts as per GICv3
+			 * terminology. Each interrupt property descriptor has 3 fields:
+			 * 1. Interrupt number 中断号
+			 * 2. Interrupt priority 优先级
+			 * 3. Type of interrupt (Edge or Level configured) 中断触发形式
+			 */
+			g0_intr_desc =	< 8 SDEI_NORMAL EDGE>,
+					<14 HIGHEST_SEC EDGE>;
+
+			g1s_intr_desc =	< 9 HIGHEST_SEC EDGE>,
+					<10 HIGHEST_SEC EDGE>,
+					<11 HIGHEST_SEC EDGE>,
+					<12 HIGHEST_SEC EDGE>,
+					<13 HIGHEST_SEC EDGE>,
+					<15 HIGHEST_SEC EDGE>,
+					<29 HIGHEST_SEC LEVEL>,
+					<56 HIGHEST_SEC LEVEL>,
+					<57 HIGHEST_SEC LEVEL>;
+		};
+#endif /* SEC_INT_DESC_IN_FCONF */
+	};
+#endif /* SDEI_IN_FCONF || SEC_INT_DESC_IN_FCONF */
+
+	/* CPU节点 */
+	cpus {
+		#address-cells = <2>; //地址用两个32位的整形变量表示
+		#size-cells = <0>; //CPU 无大小属性（因 CPU 是独立单元）
+
+		//展开后为 CPU 核心的具体描述（如 CPU 数量、ID、兼容型号等），因平台差异动态生成。
+		CPU_MAP //找不到头文件包含引用，和其他文件拼接形成一个新的文件
+
+		idle-states { //CPU低功耗状态
+			entry-method = "psci"; //通过PSCI接口进入
+
+			CPU_SLEEP_0: cpu-sleep-0 { //CPU核心级idle状态
+				compatible = "arm,idle-state"; //兼容ARM的idle状态
+				local-timer-stop; //进入低功耗状态时停止本地计时器
+				arm,psci-suspend-param = <0x0010000>; //PSCI的暂停参数
+				entry-latency-us = <40>; //进入的延迟为40微秒
+				exit-latency-us = <100>; //退出延迟100微秒
+				min-residency-us = <150>; //最小的停留时间为 150微秒
+			};
+
+			CLUSTER_SLEEP_0: cluster-sleep-0 { //集群级idle状态
+				compatible = "arm,idle-state";
+				local-timer-stop;
+				arm,psci-suspend-param = <0x1010000>;
+				entry-latency-us = <500>;
+				exit-latency-us = <1000>;
+				min-residency-us = <2500>;
+			};
+		};
+
+		CPUS //宏CPUS：展开后为每个 CPU 核心的详细配置（如寄存器地址、中断等），与CPU_MAP配合生成完整 CPU 描述。
+
+		L2_0: l2-cache0 {
+			compatible = "cache"; //描述 L2 缓存，兼容通用缓存类型（compatible = "cache"）
+		};
+	};
+
+	/* 内存节点 */
+	memory@80000000 { //内存起始地址是0x8000_0000
+		device_type = "memory";
+#if (ENABLE_RME == 1) //当启用 RME（Realms Management Extension，领域管理扩展）时
+		reg = <0x00000000 0x80000000 0 0x7C000000>, //reg = < 起始地址高32位 起始地址低32位 内存大小高32位 内存大小低32位 >
+		      <0x00000008 0x80000000 0 0x80000000>; //如果某个节点没有定义 #address-cells 和 #size-cells，那就向上层（祖先）查找，直到根节点（/）为止。
+#else												//因此这里的地址和大小的cell定义与父节点相同
+		reg = <0x00000000 0x80000000 0 0x7F000000>,
+		      <0x00000008 0x80000000 0 0x80000000>;
+#endif
+	};
+
+	/* 保留内存节点 */
+	reserved-memory { //定义内核不能随意使用的保留内存区域（如显存、安全内存等）。
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;// 范围就是父节点（根节点）的地址空间。
+
+		/* Chipselect 2,00000000 is physically at 0x18000000 */
+		// 片选的0x2_0000_0000的地址的物理地址实际是0x1800_0000
+		// 片选的意思是，选中这块芯片，可以理解为硬件的ENABLE的地址
+		vram: vram@18000000 { //显存的起始地址
+			/* 8 MB of designated video RAM */
+			compatible = "shared-dma-pool"; //这是一个“共享 DMA 池”，很多外设都可以从这个区域分配内存。常用于 GPU 显存、视频 buffer 等。
+			reg = <0x00000000 0x18000000 0 0x00800000>; //地址 + 大小
+			no-map; //这个内存区域不会被 Linux 内核映射到虚拟内存空间中，也就是说它不会出现在 /proc/iomem 或者进程的页表里，只供特定驱动通过物理地址使用。
+		};
+	};
+
+	/* 定时器节点 */
+	timer { //系统全局定时器
+		compatible = "arm,armv8-timer"; //兼容arm,armv8-timer，内核通过该属性加载对应的定时器驱动
+		//ARMv8 定时器包含 4 种中断（对应 4 种定时功能），均为PPI（私有外设中断，每个 CPU 独立）
+		interrupts = <GIC_PPI 13 (GIC_CPU_MASK_SIMPLE(8) | IRQ_TYPE_LEVEL_LOW)>, //interrupts = <类型为PPI 中断号 中断标志位>
+			     <GIC_PPI 14 (GIC_CPU_MASK_SIMPLE(8) | IRQ_TYPE_LEVEL_LOW)>,	 //GIC_CPU_MASK_SIMPLE(8) 表示中断作用于前 8 个 CPU 核（CPU0~CPU7）
+			     <GIC_PPI 11 (GIC_CPU_MASK_SIMPLE(8) | IRQ_TYPE_LEVEL_LOW)>,	 //IRQ_TYPE_LEVEL_LOW 中断触发方式：低电平触发
+			     <GIC_PPI 10 (GIC_CPU_MASK_SIMPLE(8) | IRQ_TYPE_LEVEL_LOW)>;
+		clock-frequency = <100000000>; //时钟频率100MHZ
+	};
+	/* 内存映射定时器节点 */
+	timer@2a810000 {
+			compatible = "arm,armv7-timer-mem"; //描述内存映射的 ARMv7 定时器（用于兼容旧架构或扩展定时功能），兼容arm,armv7-timer-mem
+			reg = <0x0 0x2a810000 0x0 0x10000>; //按照父节点的cell定义
+			clock-frequency = <100000000>; //时钟频率100MHZ
+			#address-cells = <1>; //这个cell的定义是定义子节点的
+			#size-cells = <1>;
+			ranges = <0x0 0x0 0x2a810000 0x100000>; //ranges 是一个描述地址映射表的复合数组，每个元素的长度取决于：子地址 1 cell + 父地址 2 cells + size 1 cell
+
+			frame@2a830000 { //定时器帧（frame）是内存映射定时器的独立定时单元，也就是一个具体的计时通道
+				frame-number = <1>; //编号为 1，用来标识不同的通道
+				interrupts = <GIC_SPI 26 IRQ_TYPE_LEVEL_HIGH>; //interrupts = <类型为SPI 中断号为26 高电平触发>
+				reg = <0x20000 0x10000>; //地址 + 大小
+			};
+	};
+
+	/* 性能监控单元节点 */
+	pmu { //用于统计 CPU 性能事件（如指令执行数、缓存命中数等），兼容arm,armv8-pmuv3。
+		compatible = "arm,armv8-pmuv3";
+		interrupts = <GIC_PPI 7 IRQ_TYPE_LEVEL_HIGH>; //interrupts = <类型为PPI 中断号为7 高电平触发>
+	};
+
+	/* 显示面板节点 */
+	panel { //描述 RTSM（Real-Time System Model）平台的虚拟显示面板，兼容arm,rtsm-display。
+		compatible = "arm,rtsm-display";
+		port { //端口配置：通过endpoint（端点）与 CLCD 控制器（clcd_pads）连接
+			panel_in: endpoint {
+				remote-endpoint = <&clcd_pads>; //与 CLCD 的输出端点绑定，实现显示数据传输
+			};
+		};
+	};
+
+	/* 总线节点 */
+	bus@8000000 {// 总线地址为0x800_0000
+		#interrupt-cells = <1>; //总线上的外设中断用 1 个整数描述（中断号）
+		//中断映射掩码：用于过滤外设中断号，前面两个0的位置是继承自父节点的地址，会通过&操作清零地址
+		interrupt-map-mask = <0 0 63>;//63 = 0x3f，表示只关注低 6 位（中断号范围 0-63）
+		interrupt-map = <0 0  0 &gic 0 GIC_SPI  0 IRQ_TYPE_LEVEL_HIGH>,//interrupt-map = < 1 2 3 &4 5 6 7 8 > 
+				<0 0  1 &gic 0 GIC_SPI  1 IRQ_TYPE_LEVEL_HIGH>,		   // 1.高子地址(child unit address) 2.低子地址(child unit address) 
+				<0 0  2 &gic 0 GIC_SPI  2 IRQ_TYPE_LEVEL_HIGH>,		   // 3.中断号(只定义了中断号)(child interrupt specifier) 4.指向 GIC 中断控制器的引用(interrupt parent)
+				<0 0  3 &gic 0 GIC_SPI  3 IRQ_TYPE_LEVEL_HIGH>,		   // 5.GIC的地址(interrupt parent unit address) 6、7、8都是parent interrupt specifier
+				<0 0  4 &gic 0 GIC_SPI  4 IRQ_TYPE_LEVEL_HIGH>,		   // 6.中断类型宏（Shared Peripheral Interrupt）
+				<0 0  5 &gic 0 GIC_SPI  5 IRQ_TYPE_LEVEL_HIGH>,		   // 7.中断号 8.中断触发方式
+				<0 0  6 &gic 0 GIC_SPI  6 IRQ_TYPE_LEVEL_HIGH>,		   //gic节点的定义在fvp-base-gicv3.dtsi中，也是通过拼接的方式形成一个大文件，因此找不到include
+				<0 0  7 &gic 0 GIC_SPI  7 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0  8 &gic 0 GIC_SPI  8 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0  9 &gic 0 GIC_SPI  9 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 10 &gic 0 GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 11 &gic 0 GIC_SPI 11 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 12 &gic 0 GIC_SPI 12 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 13 &gic 0 GIC_SPI 13 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 14 &gic 0 GIC_SPI 14 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 15 &gic 0 GIC_SPI 15 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 16 &gic 0 GIC_SPI 16 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 17 &gic 0 GIC_SPI 17 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 18 &gic 0 GIC_SPI 18 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 19 &gic 0 GIC_SPI 19 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 20 &gic 0 GIC_SPI 20 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 21 &gic 0 GIC_SPI 21 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 22 &gic 0 GIC_SPI 22 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 23 &gic 0 GIC_SPI 23 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 24 &gic 0 GIC_SPI 24 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 25 &gic 0 GIC_SPI 25 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 26 &gic 0 GIC_SPI 26 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 27 &gic 0 GIC_SPI 27 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 28 &gic 0 GIC_SPI 28 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 29 &gic 0 GIC_SPI 29 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 30 &gic 0 GIC_SPI 30 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 31 &gic 0 GIC_SPI 31 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 32 &gic 0 GIC_SPI 32 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 33 &gic 0 GIC_SPI 33 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 34 &gic 0 GIC_SPI 34 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 35 &gic 0 GIC_SPI 35 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 36 &gic 0 GIC_SPI 36 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 37 &gic 0 GIC_SPI 37 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 38 &gic 0 GIC_SPI 38 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 39 &gic 0 GIC_SPI 39 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 40 &gic 0 GIC_SPI 40 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 41 &gic 0 GIC_SPI 41 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 42 &gic 0 GIC_SPI 42 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 43 &gic 0 GIC_SPI 43 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 44 &gic 0 GIC_SPI 44 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 46 &gic 0 GIC_SPI 46 IRQ_TYPE_LEVEL_HIGH>;
+	};
+
+#if (ENABLE_RME == 1)
+	/* PCI节点 */
+	pci: pci@40000000 {
+		#address-cells = <3>;//定义了子节点的reg adr-cell，同时定义了当前节点的ranges adr cell
+		#size-cells = <2>;//
+		#interrupt-cells = <1>;
+		compatible = "pci-host-ecam-generic";
+		device_type = "pci";
+		reg = <0x0 0x40000000 0x0 0x10000000>; //按照父节点的定义 2地址 + 2大小
+		ranges = <0x2000000 0x0 0x50000000 0x0 0x50000000 0x0 0x10000000>, //DQ = 当前节点，语法说明：ranges = <DQ高地址 DQ中地址 DQ低地址 父节点高地址 父节点地址 DQ的高大小 DQ低大小>
+			/* First 3GB of 256GB PCIe memory region 2 */
+			 <0x2000000 0x40 0x00000000 0x40 0x00000000 0x0 0xc0000000>; //功能说明：ranges = <当前节点的地址偏移量 映射到父节点的地址 当前节点的映射地址大小>
+		interrupt-map = <0 0 0 1 &gic 0 0 GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>,//1~3：DQ地址；4：DQ的Specifier；5：指向 GIC 中断控制器的引用；6：GIC地址 7：？ 8~10：gic的specifier
+				<0 0 0 2 &gic 0 0 GIC_SPI 169 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 0 3 &gic 0 0 GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 0 4 &gic 0 0 GIC_SPI 171 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-map-mask = <0x0 0x0 0x0 0x7>; //在interrupt=map中，与输入的interrupt specifier相与。清零地址，只留下中断号，0x7= 0x0000 0111
+		msi-map = <0x0 &its 0x0 0x10000>;
+		iommu-map = <0x0 &smmu 0x0 0x10000>;
+		dma-coherent;
+	};
+
+	smmu: iommu@2b400000 {
+		compatible = "arm,smmu-v3";
+		reg = <0x0 0x2b400000 0x0 0x100000>;
+		interrupts = <GIC_SPI 74 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 79 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 75 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 77 IRQ_TYPE_EDGE_RISING>;
+		interrupt-names = "eventq", "gerror", "priq", "cmdq-sync";
+		dma-coherent;
+		#iommu-cells = <1>;
+		msi-parent = <&its 0x10000>;
+	};
+#endif /* ENABLE_RME */
+};

@@ -1,0 +1,81 @@
+/*
+ * Copyright (c) 2017-2021, ARM Limited and Contributors. All rights reserved.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
+/* GICv3 with ITS configuration  */
+/*【改】按soc文件重新写一下*/
+/*
+/ {
+	gic: interrupt-controller@2f000000 {
+		compatible = "arm,gic-v3";
+		#interrupt-cells = <3>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges = <0x0 0x0 0x2f000000 0x100000>;
+		interrupt-controller;
+		reg = <0x0 0x2f000000 0 0x10000>,	// GICD
+		      <0x0 0x2f100000 0 0x200000>,	// GICR
+		      <0x0 0x2c000000 0 0x2000>,	// GICC
+		      <0x0 0x2c010000 0 0x2000>,	// GICH
+		      <0x0 0x2c02f000 0 0x2000>;	// GICV
+		interrupts = <1 9 4>;
+
+
+		its: msi-controller@2f020000 {
+			compatible = "arm,gic-v3-its";
+			msi-controller;
+			#msi-cells = <1>;
+			reg = <0x20000 0x20000>;	// GITS
+		};
+	};
+};
+*/
+/*【改】去掉了GICC、GICH、GICV，修改下地址和范围*/
+/ {
+	gic: interrupt-controller@e000000 {
+		compatible = "arm,gic-v3";
+		#interrupt-cells = <3>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges = <0x0 0x0 0x0e000000 0x1000000>;
+		interrupt-controller;
+		reg = <0x0 0x0e000000 0 0x20000>,	// GICD
+		      <0x0 0x0e080000 0 0x20000>;	// GICR
+		interrupts = <1 9 4>;
+
+		its: msi-controller@e020000 {
+			compatible = "arm,gic-v3-its";
+			msi-controller;
+			#msi-cells = <1>;
+			reg = <0x20000 0x10000>,	// ITS control reg
+			      <0x30000 0x10000>,	// ITS translator reg
+			      <0x40000 0x10000>;	// ITS vSGI reg
+
+		};
+	};
+};
+
+		/*  @https://www.kernel.org/doc/Documentation/devicetree/bindings/pci/pci.txt
+			1. 传统 PCI/PCIe INTx 中断
+				在老式 PCI 或 PCIe 设备里，外设有 INTA/INTB/INTC/INTD 四根中断线（逻辑上）。
+				这些中断线最终会接到 SoC 的 中断控制器输入口。
+				在 ARM SoC 上，这个中断控制器就是 GIC（Generic Interrupt Controller）。
+				所以 PCI 节点在设备树里会用 interrupt-map 或 interrupts 属性，把 PCI slot 的中断线映射到 GIC 的 中断号 + 触发方式。
+			2. PCIe MSI/MSI-X 中断
+				新的 PCIe 设备一般支持 MSI（Message Signaled Interrupt） 或 MSI-X。
+				这种中断不是通过物理线，而是通过 写一个特殊地址触发中断（即在总线上发送一个 Memory Write）。
+				在 ARM GICv3 架构里，这种 MSI 要经过 ITS（Interrupt Translation Service） 模块翻译成 LPI（Locality-specific Peripheral Interrupt）。
+				ITS 本身也是 GIC 的一部分，所以最终还是由 GIC 分发中断。
+			GICv3 has one or more Interrupt Translation Services (ITS) that are
+			used to route Message Signalled Interrupts (MSI) to the CPUs.
+
+			These nodes must have the following properties:
+			- compatible : Should at least contain  "arm,gic-v3-its".
+			- msi-controller : Boolean property. Identifies the node as an MSI controller
+			- #msi-cells: Must be <1>. The single msi-cell is the DeviceID of the device
+			which will generate the MSI.
+			- reg: Specifies the base physical address and size of the ITS
+			registers.
+		*/
